@@ -17,6 +17,8 @@
 struct udrm_device {
 	struct drm_device drm;
 	struct drm_simple_display_pipe pipe;
+	struct drm_display_mode	display_mode;
+	struct drm_connector	connector;
 	struct work_struct dirty_work;
 	struct mutex dev_lock;
 	bool prepared;
@@ -39,16 +41,7 @@ struct udrm_device {
 	bool			initialized;
 	bool			fbdev_fb_sent;
 	struct work_struct	release_work;
-
-
-
-	struct drm_display_mode	display_mode;
-	struct drm_connector	connector;
-
 };
-
-
-
 
 static inline struct udrm_device *
 drm_to_udrm(struct drm_device *drm)
@@ -61,30 +54,6 @@ pipe_to_udrm(struct drm_simple_display_pipe *pipe)
 {
 	return container_of(pipe, struct udrm_device, pipe);
 }
-
-
-/**
- * TINYDRM_MODE - udrm display mode
- * @hd: horizontal resolution, width
- * @vd: vertical resolution, height
- * @hd_mm: display width in millimeters
- * @vd_mm: display height in millimeters
- *
- * This macro creates a &drm_display_mode for use with udrm.
- */
-#define TINYDRM_MODE(hd, vd, hd_mm, vd_mm) \
-	.hdisplay = (hd), \
-	.hsync_start = (hd), \
-	.hsync_end = (hd), \
-	.htotal = (hd), \
-	.vdisplay = (vd), \
-	.vsync_start = (vd), \
-	.vsync_end = (vd), \
-	.vtotal = (vd), \
-	.width_mm = (hd_mm), \
-	.height_mm = (vd_mm), \
-	.type = DRM_MODE_TYPE_DRIVER, \
-	.clock = 1 /* pass validation */
 
 int udrm_send_event(struct udrm_device *udev, void *ev_in);
 
