@@ -43,6 +43,7 @@ struct udrm_device {
 
 
 	struct drm_display_mode	display_mode;
+	struct drm_connector	connector;
 
 };
 

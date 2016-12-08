@@ -18,23 +18,12 @@
 
 #include "udrm.h"
 
-struct udrm_connector {
-	struct drm_connector base;
-	const struct drm_display_mode *mode;
-};
-
-static inline struct udrm_connector *
-to_udrm_connector(struct drm_connector *connector)
-{
-	return container_of(connector, struct udrm_connector, base);
-}
-
 static int udrm_connector_get_modes(struct drm_connector *connector)
 {
-	struct udrm_connector *tconn = to_udrm_connector(connector);
-	struct drm_display_mode *mode;
+	struct udrm_device *udev = drm_to_udrm(connector->dev);
+	struct drm_display_mode *mode = &udev->display_mode;
 
-	mode = drm_mode_duplicate(connector->dev, tconn->mode);
+	mode = drm_mode_duplicate(connector->dev, mode);
 	if (!mode) {
 		DRM_ERROR("Failed to duplicate mode\n");
 		return 0;
@@ -68,55 +57,18 @@ udrm_connector_detect(struct drm_connector *connector, bool force)
 	return connector->status;
 }
 
-static void udrm_connector_destroy(struct drm_connector *connector)
-{
-	struct udrm_connector *tconn = to_udrm_connector(connector);
-
-	drm_connector_cleanup(connector);
-	kfree(tconn);
-}
-
 static const struct drm_connector_funcs udrm_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.reset = drm_atomic_helper_connector_reset,
 	.detect = udrm_connector_detect,
 	.fill_modes = drm_helper_probe_single_connector_modes,
-	.destroy = udrm_connector_destroy,
+	.destroy = drm_connector_cleanup,
 	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
-struct drm_connector *
-udrm_connector_create(struct drm_device *drm,
-			 const struct drm_display_mode *mode,
-			 int connector_type)
-{
-	struct udrm_connector *tconn;
-	struct drm_connector *connector;
-	int ret;
-
-	tconn = kzalloc(sizeof(*tconn), GFP_KERNEL);
-	if (!tconn)
-		return ERR_PTR(-ENOMEM);
-
-	tconn->mode = mode;
-	connector = &tconn->base;
-
-	drm_connector_helper_add(connector, &udrm_connector_hfuncs);
-	ret = drm_connector_init(drm, connector, &udrm_connector_funcs,
-				 connector_type);
-	if (ret) {
-		kfree(tconn);
-		return ERR_PTR(ret);
-	}
-
-	connector->status = connector_status_connected;
-
-	return connector;
-}
-
-static void udrm_pipe_enable(struct drm_simple_display_pipe *pipe,
-				 struct drm_crtc_state *crtc_state)
+static void udrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
+				     struct drm_crtc_state *crtc_state)
 {
 	struct udrm_device *udev = pipe_to_udrm(pipe);
 	struct udrm_event ev = {
@@ -129,7 +81,7 @@ static void udrm_pipe_enable(struct drm_simple_display_pipe *pipe,
 	udrm_send_event(udev, &ev);
 }
 
-static void udrm_pipe_disable(struct drm_simple_display_pipe *pipe)
+static void udrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
 	struct udrm_device *udev = pipe_to_udrm(pipe);
 	struct udrm_event ev = {
@@ -177,42 +129,38 @@ static void udrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 }
 
 static const struct drm_simple_display_pipe_funcs udrm_pipe_funcs = {
-	.enable = udrm_pipe_enable,
-	.disable = udrm_pipe_disable,
+	.enable = udrm_display_pipe_enable,
+	.disable = udrm_display_pipe_disable,
 	.update = udrm_display_pipe_update,
 };
 
-int
-udrm_display_pipe_init(struct udrm_device *udev,
+int udrm_display_pipe_init(struct udrm_device *udev,
 			  int connector_type,
 			  const uint32_t *formats,
 			  unsigned int format_count)
 {
-const struct drm_display_mode *mode = &udev->display_mode;
+	const struct drm_display_mode *mode = &udev->display_mode;
+	struct drm_connector *connector = &udev->connector;
 	struct drm_device *drm = &udev->drm;
-	struct drm_display_mode *mode_copy;
-	struct drm_connector *connector;
 	int ret;
 
-	mode_copy = devm_kmalloc(drm->dev, sizeof(*mode_copy), GFP_KERNEL);
-	if (!mode_copy)
-		return -ENOMEM;
+	drm->mode_config.min_width = mode->hdisplay;
+	drm->mode_config.max_width = mode->hdisplay;
+	drm->mode_config.min_height = mode->vdisplay;
+	drm->mode_config.max_height = mode->vdisplay;
 
-	*mode_copy = *mode;
+	drm_connector_helper_add(connector, &udrm_connector_hfuncs);
+	ret = drm_connector_init(drm, connector, &udrm_connector_funcs,
+				 connector_type);
+	if (ret)
+		return ret;
 
-	drm->mode_config.min_width = mode_copy->hdisplay;
-	drm->mode_config.max_width = mode_copy->hdisplay;
-	drm->mode_config.min_height = mode_copy->vdisplay;
-	drm->mode_config.max_height = mode_copy->vdisplay;
-
-	connector = udrm_connector_create(drm, mode_copy, connector_type);
-	if (IS_ERR(connector))
-		return PTR_ERR(connector);
+	connector->status = connector_status_connected;
 
 	ret = drm_simple_display_pipe_init(drm, &udev->pipe, &udrm_pipe_funcs, formats,
 					   format_count, connector);
 	if (ret)
-		return ret;
+		drm_connector_cleanup(connector);
 
-	return 0;
+	return ret;
 }
