@@ -16,9 +16,10 @@
 
 struct udrm_device {
 	struct drm_device drm;
+	struct drm_driver driver;
 	struct drm_simple_display_pipe pipe;
 	struct drm_display_mode	display_mode;
-	struct drm_connector	connector;
+	struct drm_connector connector;
 	struct work_struct dirty_work;
 	struct mutex dev_lock;
 	bool prepared;
@@ -72,8 +73,6 @@ udrm_display_pipe_init(struct udrm_device *tdev,
 			  int connector_type,
 			  const uint32_t *formats,
 			  unsigned int format_count);
-int devm_udrm_init(struct device *parent, struct udrm_device *tdev,
-		      struct drm_driver *driver);
 
 int udrm_fbdev_init(struct udrm_device *tdev);
 void udrm_fbdev_fini(struct udrm_device *tdev);

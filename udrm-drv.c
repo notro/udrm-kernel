@@ -104,40 +104,29 @@ static const struct file_operations udrm_drm_fops = {
 	.mmap		= drm_gem_cma_mmap,
 };
 
-static struct drm_driver udrm_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
-	.gem_free_object	= udrm_gem_cma_free_object,
-	.gem_vm_ops		= &drm_gem_cma_vm_ops,
-	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
-	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
-	.gem_prime_import	= drm_gem_prime_import,
-	.gem_prime_export	= drm_gem_prime_export,
-	.gem_prime_get_sg_table	= drm_gem_cma_prime_get_sg_table,
-	.gem_prime_import_sg_table = udrm_gem_cma_prime_import_sg_table,
-	.gem_prime_vmap		= drm_gem_cma_prime_vmap,
-	.gem_prime_vunmap	= drm_gem_cma_prime_vunmap,
-	.gem_prime_mmap		= drm_gem_cma_prime_mmap,
-	.dumb_create		= drm_gem_cma_dumb_create,
-	.dumb_map_offset	= drm_gem_cma_dumb_map_offset,
-	.dumb_destroy		= drm_gem_dumb_destroy,
-	.fops			= &udrm_drm_fops,
-	.lastclose		= udrm_lastclose,
-
-	.ioctls			= udrm_ioctls,
-	.num_ioctls		= ARRAY_SIZE(udrm_ioctls),
-
-	.name			= "udrm",
-	.desc			= "DRM userspace driver support",
-	.date			= "20161119",
-	.major			= 1,
-	.minor			= 0,
-};
-
 static const uint32_t udrm_formats[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
 };
+
+static void udrm_dirty_work(struct work_struct *work)
+{
+	struct udrm_device *udev = container_of(work, struct udrm_device,
+						   dirty_work);
+	struct drm_framebuffer *fb = udev->pipe.plane.fb;
+	struct drm_crtc *crtc = &udev->pipe.crtc;
+
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	if (udev->event) {
+		DRM_DEBUG_KMS("crtc event\n");
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, udev->event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+		udev->event = NULL;
+	}
+}
 
 static const struct drm_mode_config_funcs udrm_mode_config_funcs = {
 	.fb_create = udrm_fb_create,
@@ -145,11 +134,72 @@ static const struct drm_mode_config_funcs udrm_mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
-static int udrm_register(struct udrm_device *udev, struct udrm_dev_create *dev_create)
+static int udrm_drm_init(struct udrm_device *udev, char *drv_name)
+{
+	struct drm_driver *drv = &udev->driver;
+	struct drm_device *drm = &udev->drm;
+	struct device *parent = &udev->dev;
+	int ret;
+
+	drv->name = kstrdup(drv_name, GFP_KERNEL);
+	if (!drv->name)
+		return -ENOMEM;
+
+	drv->driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
+				  DRIVER_ATOMIC;
+	drv->gem_free_object		= udrm_gem_cma_free_object;
+	drv->gem_vm_ops			= &drm_gem_cma_vm_ops;
+	drv->prime_handle_to_fd		= drm_gem_prime_handle_to_fd;
+	drv->prime_fd_to_handle		= drm_gem_prime_fd_to_handle;
+	drv->gem_prime_import		= drm_gem_prime_import;
+	drv->gem_prime_export		= drm_gem_prime_export;
+	drv->gem_prime_get_sg_table	= drm_gem_cma_prime_get_sg_table;
+	drv->gem_prime_import_sg_table	= udrm_gem_cma_prime_import_sg_table;
+	drv->gem_prime_vmap		= drm_gem_cma_prime_vmap;
+	drv->gem_prime_vunmap		= drm_gem_cma_prime_vunmap;
+	drv->gem_prime_mmap		= drm_gem_cma_prime_mmap;
+	drv->dumb_create		= drm_gem_cma_dumb_create;
+	drv->dumb_map_offset		= drm_gem_cma_dumb_map_offset;
+	drv->dumb_destroy		= drm_gem_dumb_destroy;
+	drv->fops			= &udrm_drm_fops;
+	drv->lastclose			= udrm_lastclose;
+
+	drv->ioctls		= udrm_ioctls;
+	drv->num_ioctls		= ARRAY_SIZE(udrm_ioctls);
+
+	drv->desc		= "DRM userspace driver support";
+	drv->date		= "20161119";
+	drv->major		= 1;
+	drv->minor		= 0;
+
+	INIT_WORK(&udev->dirty_work, udrm_dirty_work);
+	mutex_init(&udev->dev_lock);
+
+	ret = drm_dev_init(drm, drv, parent);
+	if (ret)
+		return ret;
+
+	drm_mode_config_init(drm);
+	drm->mode_config.funcs = &udrm_mode_config_funcs;
+
+	return 0;
+}
+
+static void udrm_drm_fini(struct udrm_device *udev)
+{
+	struct drm_device *drm = &udev->drm;
+
+	DRM_DEBUG_KMS("\n");
+
+	drm_mode_config_cleanup(drm);
+	drm_dev_unref(drm);
+	mutex_destroy(&udev->dev_lock);
+}
+
+static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *dev_create)
 {
 	struct device *dev = &udev->dev;
 	struct drm_device *drm;
-	struct drm_driver *drv;
 	int ret;
 
 	if (!dev->coherent_dma_mask) {
@@ -158,16 +208,7 @@ static int udrm_register(struct udrm_device *udev, struct udrm_dev_create *dev_c
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
-	drv = devm_kmalloc(&udev->dev, sizeof(*drv), GFP_KERNEL);
-	if (!drv)
-		return -ENOMEM;
-
-	*drv = udrm_driver;
-	drv->name = kstrdup(dev_create->name, GFP_KERNEL);
-	if (!drv->name)
-		return -ENOMEM;
-
-	ret = devm_udrm_init(&udev->dev, udev, drv);
+	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
 		return ret;
 
@@ -206,7 +247,7 @@ static int udrm_register(struct udrm_device *udev, struct udrm_dev_create *dev_c
 	return 0;
 }
 
-static void udrm_unregister(struct udrm_device *udev)
+static void udrm_drm_unregister(struct udrm_device *udev)
 {
 	struct drm_device *drm = &udev->drm;
 
@@ -216,6 +257,8 @@ static void udrm_unregister(struct udrm_device *udev)
 	cancel_work_sync(&udev->dirty_work);
 	udrm_fbdev_fini(udev);
 	drm_dev_unregister(drm);
+
+	udrm_drm_fini(udev);
 }
 
 /*********************************************************************************************************************************/
@@ -233,7 +276,7 @@ static void udrm_release_work(struct work_struct *work)
 		msleep(1000);
 	}
 
-	udrm_unregister(udev);
+	udrm_drm_unregister(udev);
 
 
 	dev_dbg(&udev->dev, "%s: dev.refcount=%d\n", __func__, atomic_read(&udev->dev.kobj.kref.refcount));
@@ -401,7 +444,7 @@ static long udrm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (copy_from_user(&dev_create, (void __user *)arg, sizeof(dev_create)))
 			return -EFAULT;
 
-		ret = udrm_register(udev, &dev_create);
+		ret = udrm_drm_register(udev, &dev_create);
 		if (!ret) {
 			udev->initialized = true;
 			if (copy_to_user((void __user *)arg, &dev_create, sizeof(dev_create)))
