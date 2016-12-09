@@ -19,33 +19,16 @@
 static int udrm_fb_create_event(struct drm_framebuffer *fb)
 {
 	struct udrm_device *udev = drm_to_udrm(fb->dev);
-	struct udrm_event_fb_create ev = {
+	struct udrm_event_fb ev = {
 		.base = {
 			.type = UDRM_EVENT_FB_CREATE,
 			.length = sizeof(ev),
 		},
+		.fb_id = fb->base.id,
 	};
-	struct drm_mode_fb_cmd2 *ufb = &ev.fb;
-	struct drm_gem_cma_object *cma_obj;
-	int ret, i;
+	int ret;
 
 	dev_dbg(fb->dev->dev, "%s: [FB:%d]\n", __func__, fb->base.id);
-
-	ufb->fb_id = fb->base.id;
-	ufb->width = fb->width;
-	ufb->height = fb->height;
-	ufb->pixel_format = fb->pixel_format;
-	ufb->flags = fb->flags;
-
-	for (i = 0; i < 4; i++) {
-		cma_obj = drm_fb_cma_get_gem_obj(fb, i);
-		if (!cma_obj)
-			break;
-
-		ufb->pitches[i] = fb->pitches[i];
-		ufb->offsets[i] = fb->offsets[i];
-		ufb->modifier[i] = fb->modifier[i];
-	}
 
 	ret = idr_alloc(&udev->idr, fb, fb->base.id, fb->base.id + 1, GFP_KERNEL);
 	if (ret < 1) {
@@ -177,7 +160,7 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 static void udrm_fb_destroy(struct drm_framebuffer *fb)
 {
 	struct udrm_device *udev = drm_to_udrm(fb->dev);
-	struct udrm_event_fb_destroy ev = {
+	struct udrm_event_fb ev = {
 		.base = {
 			.type = UDRM_EVENT_FB_DESTROY,
 			.length = sizeof(ev),

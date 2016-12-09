@@ -22,9 +22,8 @@ extern "C" {
 
 #define UDRM_MAX_NAME_SIZE    80
 
-/* ioctl */
-/* FIXME: what should this be? */
-#define UDRM_IOCTL_BASE       'U'
+/* FIXME: Update Documentation/ioctl/ioctl-number.txt */
+#define UDRM_IOCTL_BASE       0xB5
 
 struct udrm_dev_create {
 	char name[UDRM_MAX_NAME_SIZE];
@@ -41,16 +40,11 @@ struct udrm_event {
 
 #define UDRM_EVENT_PIPE_ENABLE	1
 #define UDRM_EVENT_PIPE_DISABLE	2
+
 #define UDRM_EVENT_FB_CREATE	3
-
-struct udrm_event_fb_create {
-	struct udrm_event base;
-	struct drm_mode_fb_cmd2 fb;
-};
-
 #define UDRM_EVENT_FB_DESTROY	4
 
-struct udrm_event_fb_destroy {
+struct udrm_event_fb {
 	struct udrm_event base;
 	__u32 fb_id;
 };

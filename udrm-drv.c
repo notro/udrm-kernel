@@ -433,8 +433,7 @@ static const struct file_operations udrm_fops = {
 static struct miscdevice udrm_misc = {
 	.fops		= &udrm_fops,
 	.minor		= MISC_DYNAMIC_MINOR,
-//	.name		= "udrm",
-	.name		= "utinydrm",
+	.name		= "udrm",
 };
 
 static int __init udrm_init(void)
