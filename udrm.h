@@ -59,21 +59,15 @@ pipe_to_udrm(struct drm_simple_display_pipe *pipe)
 
 int udrm_send_event(struct udrm_device *udev, void *ev_in);
 
-void udrm_lastclose(struct drm_device *drm);
-void udrm_gem_cma_free_object(struct drm_gem_object *gem_obj);
-struct drm_gem_object *
-udrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
-				      struct dma_buf_attachment *attach,
-				      struct sg_table *sgt);
-struct drm_framebuffer *
-udrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
-		  const struct drm_mode_fb_cmd2 *mode_cmd);
 int
 udrm_display_pipe_init(struct udrm_device *tdev,
 			  int connector_type,
 			  const uint32_t *formats,
 			  unsigned int format_count);
 
+struct drm_framebuffer *
+udrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
+		  const struct drm_mode_fb_cmd2 *mode_cmd);
 int udrm_fbdev_init(struct udrm_device *tdev);
 void udrm_fbdev_fini(struct udrm_device *tdev);
 

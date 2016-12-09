@@ -13,6 +13,7 @@
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <linux/completion.h>
+#include <linux/dma-buf.h>
 #include <linux/fs.h>
 #include <linux/idr.h>
 #include <linux/init.h>
@@ -68,7 +69,59 @@ out_unlock:
 	mutex_unlock(&udev->dev_lock);
 
 	dev_dbg(udev->drm.dev, "%s OUT ret=%d, event_ret=%d\n", __func__, ret, udev->event_ret);
+
 	return ret;
+}
+
+static void udrm_lastclose(struct drm_device *drm)
+{
+	struct udrm_device *tdev = drm_to_udrm(drm);
+
+	DRM_DEBUG_KMS("\n");
+	if (tdev->fbdev_used)
+		drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+	else
+		drm_crtc_force_disable_all(drm);
+}
+
+static void udrm_gem_cma_free_object(struct drm_gem_object *gem_obj)
+{
+	if (gem_obj->import_attach) {
+		struct drm_gem_cma_object *cma_obj;
+
+		cma_obj = to_drm_gem_cma_obj(gem_obj);
+		dma_buf_vunmap(gem_obj->import_attach->dmabuf, cma_obj->vaddr);
+		cma_obj->vaddr = NULL;
+	}
+
+	drm_gem_cma_free_object(gem_obj);
+}
+
+static struct drm_gem_object *
+udrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
+				      struct dma_buf_attachment *attach,
+				      struct sg_table *sgt)
+{
+	struct drm_gem_cma_object *cma_obj;
+	struct drm_gem_object *obj;
+	void *vaddr;
+
+	vaddr = dma_buf_vmap(attach->dmabuf);
+	if (!vaddr) {
+		DRM_ERROR("Failed to vmap PRIME buffer\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
+	obj = drm_gem_cma_prime_import_sg_table(drm, attach, sgt);
+	if (IS_ERR(obj)) {
+		dma_buf_vunmap(attach->dmabuf, vaddr);
+		return obj;
+	}
+
+	cma_obj = to_drm_gem_cma_obj(obj);
+	cma_obj->vaddr = vaddr;
+
+	return obj;
 }
 
 static int udrm_prime_handle_to_fd_ioctl(struct drm_device *dev, void *data,
@@ -208,6 +261,12 @@ static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *d
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
+	ret = drm_mode_convert_umode(&udev->display_mode, &dev_create->mode);
+	if (ret)
+		return ret;
+
+	drm_mode_debug_printmodeline(&udev->display_mode);
+
 	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
 		return ret;
@@ -215,18 +274,12 @@ static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *d
 	drm = &udev->drm;
 	drm->mode_config.funcs = &udrm_mode_config_funcs;
 
-	ret = drm_mode_convert_umode(&udev->display_mode, &dev_create->mode);
-	if (ret)
-		return ret;
-
-	drm_mode_debug_printmodeline(&udev->display_mode);
-
 	ret = udrm_display_pipe_init(udev,
 					DRM_MODE_CONNECTOR_VIRTUAL,
 					udrm_formats,
 					ARRAY_SIZE(udrm_formats));
 	if (ret)
-		return ret;
+		goto err_fini;
 
 	drm->mode_config.preferred_depth = 16;
 
@@ -236,7 +289,7 @@ static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *d
 
 	ret = drm_dev_register(drm, 0);
 	if (ret)
-		return ret;
+		goto err_fini;
 
 	ret = udrm_fbdev_init(udev);
 	if (ret)
@@ -245,6 +298,11 @@ static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *d
 	dev_create->index = drm->primary->index;
 
 	return 0;
+
+err_fini:
+	udrm_drm_fini(udev);
+
+	return ret;
 }
 
 static void udrm_drm_unregister(struct udrm_device *udev)
@@ -277,7 +335,6 @@ static void udrm_release_work(struct work_struct *work)
 	}
 
 	udrm_drm_unregister(udev);
-
 
 	dev_dbg(&udev->dev, "%s: dev.refcount=%d\n", __func__, atomic_read(&udev->dev.kobj.kref.refcount));
 
