@@ -79,12 +79,21 @@ static const struct drm_mode_config_funcs udrm_mode_config_funcs = {
 
 static void udrm_dirty_work(struct work_struct *work)
 {
-	struct udrm_device *tdev = container_of(work, struct udrm_device,
+	struct udrm_device *udev = container_of(work, struct udrm_device,
 						   dirty_work);
-	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
+	struct drm_framebuffer *fb = udev->pipe.plane.fb;
+	struct drm_crtc *crtc = &udev->pipe.crtc;
 
-	if (fb && fb->funcs->dirty)
+	if (fb)
 		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	if (udev->event) {
+		DRM_DEBUG_KMS("crtc event\n");
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, udev->event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+		udev->event = NULL;
+	}
 }
 
 static int udrm_init(struct device *parent, struct udrm_device *tdev,

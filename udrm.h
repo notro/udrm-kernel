@@ -27,6 +27,7 @@ struct udrm_device {
 	struct drm_fb_helper *fbdev_helper;
 	bool fbdev_used;
 
+	struct drm_pending_vblank_event *event;
 
 	struct device dev;
 	struct idr 		idr;

@@ -98,9 +98,9 @@ static void udrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 static void udrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 				 struct drm_plane_state *old_state)
 {
-	struct udrm_device *tdev = pipe_to_udrm(pipe);
+	struct udrm_device *udev = pipe_to_udrm(pipe);
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
-	struct drm_crtc *crtc = &tdev->pipe.crtc;
+	struct drm_crtc *crtc = &udev->pipe.crtc;
 
 	if (!fb)
 		DRM_DEBUG_KMS("fb unset\n");
@@ -110,10 +110,14 @@ static void udrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 		DRM_DEBUG_KMS("No fb change\n");
 
 	if (fb && (fb != old_state->fb)) {
-		struct udrm_device *tdev = pipe_to_udrm(pipe);
-
 		pipe->plane.fb = fb;
-		schedule_work(&tdev->dirty_work);
+
+		if (crtc->state->event) {
+			udev->event = crtc->state->event;
+			crtc->state->event = NULL;
+		}
+
+		schedule_work(&udev->dirty_work);
 	}
 
 	if (crtc->state->event) {
@@ -124,8 +128,8 @@ static void udrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 		crtc->state->event = NULL;
 	}
 
-	if (tdev->fbdev_helper && fb == tdev->fbdev_helper->fb)
-		tdev->fbdev_used = true;
+	if (udev->fbdev_helper && fb == udev->fbdev_helper->fb)
+		udev->fbdev_used = true;
 }
 
 static const struct drm_simple_display_pipe_funcs udrm_pipe_funcs = {
