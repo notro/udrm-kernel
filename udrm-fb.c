@@ -28,11 +28,11 @@ static int udrm_fb_create_event(struct drm_framebuffer *fb)
 	};
 	int ret;
 
-	dev_dbg(fb->dev->dev, "%s: [FB:%d]\n", __func__, fb->base.id);
+	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
 
 	ret = idr_alloc(&udev->idr, fb, fb->base.id, fb->base.id + 1, GFP_KERNEL);
 	if (ret < 1) {
-		dev_err(fb->dev->dev, "%s: [FB:%d]: failed to allocate idr %d\n", __func__, fb->base.id, ret);
+		DRM_ERROR("[FB:%d]: failed to allocate idr %d\n", fb->base.id, ret);
 		return ret;
 	}
 
@@ -93,7 +93,7 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	size_t size_clips, size;
 	int ret;
 
-	pr_debug("\n\n\n");
+	DRM_DEBUG_KMS("\n\n\n");
 
 	/* don't return -EINVAL, xorg will stop flushing */
 	if (!udev->prepared)
@@ -130,7 +130,7 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	if (!ev)
 		return -ENOMEM;
 
-	dev_dbg(fb->dev->dev, "%s: [FB:%d]: num_clips=%u, size_clips=%zu, size=%zu\n", __func__, fb->base.id, num_clips, size_clips, size);
+	DRM_DEBUG("[FB:%d]: num_clips=%u, size_clips=%zu, size=%zu\n", fb->base.id, num_clips, size_clips, size);
 
 	ev->base.type = UDRM_EVENT_FB_DIRTY;
 	ev->base.length = size;
@@ -149,10 +149,8 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	ret = udrm_send_event(udev, ev);
 
-	if (ret) {
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
-			     ret);
-	}
+	if (ret)
+		pr_err_once("Failed to update display %d\n", ret);
 
 	return ret;
 }
@@ -169,7 +167,7 @@ static void udrm_fb_destroy(struct drm_framebuffer *fb)
 	struct drm_framebuffer *iter;
 	int id;
 
-	dev_dbg(fb->dev->dev, "%s: [FB:%d]\n", __func__, fb->base.id);
+	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
 
 	idr_for_each_entry(&udev->idr, iter, id) {
 		if (fb == iter)
@@ -177,7 +175,7 @@ static void udrm_fb_destroy(struct drm_framebuffer *fb)
 	}
 
 	if (!iter) {
-		dev_err(fb->dev->dev, "%s: failed to find idr\n", __func__);
+		DRM_ERROR("failed to find idr\n");
 		return;
 	}
 

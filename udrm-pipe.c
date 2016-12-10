@@ -76,7 +76,7 @@ static void udrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 		.length = sizeof(ev),
 	};
 
-	dev_dbg(udev->drm.dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 	udev->prepared = true;
 	udrm_send_event(udev, &ev);
 }
@@ -89,7 +89,7 @@ static void udrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 		.length = sizeof(ev),
 	};
 
-	dev_dbg(udev->drm.dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 	udev->prepared = false;
 	udev->enabled = false;
 	udrm_send_event(udev, &ev);

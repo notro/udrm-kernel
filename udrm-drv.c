@@ -41,7 +41,7 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	if (!ev)
 		return -ENOMEM;
 
-	dev_dbg(udev->drm.dev, "%s(ev=%p) IN\n", __func__, ev);
+	DRM_DEBUG("(ev=%p) IN\n", ev);
 	mutex_lock(&udev->dev_lock);
 	reinit_completion(&udev->completion);
 
@@ -53,7 +53,7 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	udev->ev = ev;
 	mutex_unlock(&udev->mutex);
 
-	dev_dbg(udev->drm.dev, "%s: ev->type=%u, ev->length=%u\n", __func__, udev->ev->type, udev->ev->length);
+	DRM_DEBUG("ev->type=%u, ev->length=%u\n", udev->ev->type, udev->ev->length);
 
 	wake_up_interruptible(&udev->waitq);
 
@@ -61,14 +61,14 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	//ret = udev->event_ret;
 	//time_left = 1;
 	if (!time_left) {
-		dev_err(&udev->dev, "%s: timeout waiting for reply\n", __func__);
+		DRM_ERROR("timeout waiting for reply\n");
 		ret =-ETIMEDOUT;
 	}
 
 out_unlock:
 	mutex_unlock(&udev->dev_lock);
 
-	dev_dbg(udev->drm.dev, "%s OUT ret=%d, event_ret=%d\n", __func__, ret, udev->event_ret);
+	DRM_DEBUG("OUT ret=%d, event_ret=%d\n", ret, udev->event_ret);
 
 	return ret;
 }
@@ -191,7 +191,6 @@ static int udrm_drm_init(struct udrm_device *udev, char *drv_name)
 {
 	struct drm_driver *drv = &udev->driver;
 	struct drm_device *drm = &udev->drm;
-	struct device *parent = &udev->dev;
 	int ret;
 
 	drv->name = kstrdup(drv_name, GFP_KERNEL);
@@ -228,7 +227,7 @@ static int udrm_drm_init(struct udrm_device *udev, char *drv_name)
 	INIT_WORK(&udev->dirty_work, udrm_dirty_work);
 	mutex_init(&udev->dev_lock);
 
-	ret = drm_dev_init(drm, drv, parent);
+	ret = drm_dev_init(drm, drv, NULL);
 	if (ret)
 		return ret;
 
@@ -242,24 +241,17 @@ static void udrm_drm_fini(struct udrm_device *udev)
 {
 	struct drm_device *drm = &udev->drm;
 
-	DRM_DEBUG_KMS("\n");
+	DRM_DEBUG_KMS("udrm_drm_fini\n");
 
 	drm_mode_config_cleanup(drm);
-	drm_dev_unref(drm);
+//	drm_dev_unref(drm);
 	mutex_destroy(&udev->dev_lock);
 }
 
 static int udrm_drm_register(struct udrm_device *udev, struct udrm_dev_create *dev_create)
 {
-	struct device *dev = &udev->dev;
 	struct drm_device *drm;
 	int ret;
-
-	if (!dev->coherent_dma_mask) {
-		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
-		if (ret)
-			dev_warn(dev, "Failed to set dma mask %d\n", ret);
-	}
 
 	ret = drm_mode_convert_umode(&udev->display_mode, &dev_create->mode);
 	if (ret)
@@ -309,7 +301,7 @@ static void udrm_drm_unregister(struct udrm_device *udev)
 {
 	struct drm_device *drm = &udev->drm;
 
-	DRM_DEBUG_KMS("\n");
+	DRM_DEBUG_KMS("udrm_drm_unregister\n");
 
 	drm_crtc_force_disable_all(drm);
 	cancel_work_sync(&udev->dirty_work);
@@ -330,44 +322,20 @@ static void udrm_release_work(struct work_struct *work)
 	//drm_device_set_unplugged(drm);
 
 	while (drm->open_count) {
-		dev_dbg(drm->dev, "%s: open_count=%d\n", __func__, drm->open_count);
+		DRM_DEBUG_KMS("open_count=%d\n", drm->open_count);
 		msleep(1000);
 	}
 
 	udrm_drm_unregister(udev);
-
-	dev_dbg(&udev->dev, "%s: dev.refcount=%d\n", __func__, atomic_read(&udev->dev.kobj.kref.refcount));
-
-	device_unregister(&udev->dev);
-}
-
-static void udrm_device_release(struct device *dev)
-{
-	//struct udrm_device *udev = container_of(dev, struct udrm_device, dev);
-
-	dev_dbg(dev, "%s\n", __func__);
-	/* FIXME: there's use after free */
-	//kfree(udev);
 }
 
 static int udrm_open(struct inode *inode, struct file *file)
 {
 	struct udrm_device *udev;
-	int ret;
 
 	udev = kzalloc(sizeof(*udev), GFP_KERNEL);
 	if (!udev)
 		return -ENOMEM;
-
-	/* FIXME: tinydrm currently needs a parent device */
-	dev_set_name(&udev->dev, "udrm%u", 0);
-	udev->dev.release = udrm_device_release;
-	ret = device_register(&udev->dev);
-	if (ret) {
-		put_device(&udev->dev);
-		kfree(udev);
-		return ret;
-	}
 
 	mutex_init(&udev->mutex);
 	init_waitqueue_head(&udev->waitq);
@@ -387,7 +355,7 @@ static ssize_t udrm_write(struct file *file, const char __user *buffer,
 	struct udrm_device *udev = file->private_data;
 	int ret, event_ret;
 
-	dev_dbg(udev->drm.dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 
 	if (!udev->initialized)
 		return -EINVAL;
@@ -419,7 +387,7 @@ static ssize_t udrm_read(struct file *file, char __user *buffer, size_t count,
 	struct udrm_device *udev = file->private_data;
 	ssize_t ret;
 
-	dev_dbg(&udev->dev, "%s(count=%zu)\n", __func__, count);
+	DRM_DEBUG_KMS("(count=%zu)\n", count);
 	if (!count)
 		return 0;
 
@@ -431,7 +399,7 @@ static ssize_t udrm_read(struct file *file, char __user *buffer, size_t count,
 		if (!udev->ev && (file->f_flags & O_NONBLOCK)) {
 			ret = -EAGAIN;
 		} else if (udev->ev) {
-			dev_dbg(&udev->dev, "%s udev->ev->length=%u\n", __func__, udev->ev->length);
+			DRM_DEBUG_KMS("udev->ev->length=%u\n", udev->ev->length);
 			if (count < udev->ev->length)
 				ret = -EINVAL;
 			else if (copy_to_user(buffer, udev->ev, udev->ev->length))
@@ -444,13 +412,11 @@ static ssize_t udrm_read(struct file *file, char __user *buffer, size_t count,
 
 		mutex_unlock(&udev->mutex);
 
-		dev_dbg(&udev->dev, "%s: ret=%d\n", __func__, ret);
 		if (ret)
 			break;
 
 		if (!(file->f_flags & O_NONBLOCK))
 			ret = wait_event_interruptible(udev->waitq, udev->ev);
-		dev_dbg(&udev->dev, "%s: while: ret=%d\n", __func__, ret);
 	} while (ret == 0);
 
 	return ret;
@@ -460,7 +426,7 @@ static unsigned int udrm_poll(struct file *file, poll_table *wait)
 {
 	struct udrm_device *udev = file->private_data;
 
-	dev_dbg(udev->drm.dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 	poll_wait(file, &udev->waitq, wait);
 
 	if (udev->ev)
@@ -472,19 +438,9 @@ static unsigned int udrm_poll(struct file *file, poll_table *wait)
 static int udrm_release(struct inode *inode, struct file *file)
 {
 	struct udrm_device *udev = file->private_data;
-	int i;
 
-	dev_dbg(&udev->dev, "%s: refcount=%d\n", __func__, atomic_read(&udev->dev.kobj.kref.refcount));
-
-	if (udev->initialized) {
+	if (udev->initialized)
 		schedule_work(&udev->release_work);
-	} else {
-		dev_dbg(&udev->dev, "%s: refcount=%d\n", __func__, atomic_read(&udev->dev.kobj.kref.refcount));
-
-		device_unregister(&udev->dev);
-		for (i = atomic_read(&udev->dev.kobj.kref.refcount); i > 0; i--)
-			put_device(&udev->dev);
-	}
 
 	return 0;
 }
