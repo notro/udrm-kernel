@@ -188,9 +188,9 @@ static void udrm_drm_fini(struct udrm_device *udev)
 
 	DRM_DEBUG_KMS("udrm_drm_fini\n");
 
-	drm_mode_config_cleanup(drm);
-//	drm_dev_unref(drm);
 	mutex_destroy(&udev->dev_lock);
+	drm_mode_config_cleanup(drm);
+	drm_dev_unref(drm);
 }
 
 int udrm_drm_register(struct udrm_device *udev,
