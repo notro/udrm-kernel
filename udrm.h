@@ -58,6 +58,10 @@ pipe_to_udrm(struct drm_simple_display_pipe *pipe)
 
 int udrm_send_event(struct udrm_device *udev, void *ev_in);
 
+int udrm_drm_register(struct udrm_device *udev,
+		      struct udrm_dev_create *dev_create);
+void udrm_drm_unregister(struct udrm_device *udev);
+
 int
 udrm_display_pipe_init(struct udrm_device *tdev,
 			  int connector_type,
