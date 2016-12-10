@@ -31,6 +31,11 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	unsigned long time_left;
 	int ret = 0;
 
+	if (!udev->initialized) {
+		DRM_ERROR("Not initialized\n");
+		return -ENODEV;
+	}
+
 	ev = kmemdup(ev, ev->length, GFP_KERNEL);
 	if (!ev)
 		return -ENOMEM;
@@ -74,6 +79,10 @@ static void udrm_release_work(struct work_struct *work)
 	struct drm_device *drm = &udev->drm;
 
 	//drm_device_set_unplugged(drm);
+
+	udev->initialized = false;
+	udev->event_ret = -ENODEV;
+	complete(&udev->completion);
 
 	while (drm->open_count) {
 		DRM_DEBUG_KMS("open_count=%d\n", drm->open_count);
