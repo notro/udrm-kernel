@@ -102,11 +102,6 @@ static const struct file_operations udrm_drm_fops = {
 	.mmap		= drm_gem_cma_mmap,
 };
 
-static const uint32_t udrm_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
 static void udrm_dirty_work(struct work_struct *work)
 {
 	struct udrm_device *udev = container_of(work, struct udrm_device,
@@ -193,11 +188,44 @@ static void udrm_drm_fini(struct udrm_device *udev)
 	drm_dev_unref(drm);
 }
 
+static int udrm_create_buf(struct udrm_device *udev, u32 mode,
+			   uint32_t *formats, unsigned int num_formats)
+{
+	int i, fd, ret, max_cpp = 0;
+	size_t len;
+
+	if (mode & UDRM_BUF_MODE_EMUL_XRGB8888)
+		udev->emulate_xrgb8888 = true;
+
+	for (i = 0; i < num_formats; i++) {
+		if (udev->emulate_xrgb8888 && formats[i] == DRM_FORMAT_XRGB8888)
+			continue;
+		max_cpp = max(max_cpp, drm_format_plane_cpp(formats[i], 0));
+	}
+
+	len = udev->display_mode.hdisplay * udev->display_mode.vdisplay * max_cpp;
+
+	udev->dmabuf = udrm_dmabuf_alloc_attrs(NULL, len,
+					       DMA_ATTR_WRITE_COMBINE, O_RDWR);
+	if (IS_ERR(udev->dmabuf))
+		return PTR_ERR(udev->dmabuf);
+
+	fd = dma_buf_fd(udev->dmabuf, O_RDWR);
+	if (fd < 0) {
+		dma_buf_put(udev->dmabuf);
+		return fd;
+	}
+
+	udev->buf_fd = fd;
+
+	return 0;
+}
+
 int udrm_drm_register(struct udrm_device *udev,
-		      struct udrm_dev_create *dev_create)
+		      struct udrm_dev_create *dev_create,
+		      uint32_t *formats, unsigned int num_formats)
 {
 	struct drm_device *drm;
-	int fd = -1;
 	int ret;
 
 	ret = drm_mode_convert_umode(&udev->display_mode, &dev_create->mode);
@@ -207,32 +235,26 @@ int udrm_drm_register(struct udrm_device *udev,
 	drm_mode_debug_printmodeline(&udev->display_mode);
 
 	if (dev_create->buf_mode) {
-		udev->dmabuf = udrm_dmabuf_alloc_attrs(NULL, 320 * 240 * 2, DMA_ATTR_WRITE_COMBINE, O_RDWR);
-		if (IS_ERR(udev->dmabuf))
-			return PTR_ERR(udev->dmabuf);
-
-		fd = dma_buf_fd(udev->dmabuf, O_RDWR);
-		if (fd < 0) {
-			dma_buf_put(udev->dmabuf);
-			return fd;
-		}
+		ret = udrm_create_buf(udev, dev_create->buf_mode, formats, num_formats);
+		if (ret)
+			return ret;
+	} else {
+		udev->buf_fd = -1;
 	}
 
 	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
-		return ret;
+		return ret;;
 
 	drm = &udev->drm;
 	drm->mode_config.funcs = &udrm_mode_config_funcs;
 
-	ret = udrm_display_pipe_init(udev,
-					DRM_MODE_CONNECTOR_VIRTUAL,
-					udrm_formats,
-					ARRAY_SIZE(udrm_formats));
+	ret = udrm_display_pipe_init(udev, DRM_MODE_CONNECTOR_VIRTUAL,
+				     formats, num_formats);
 	if (ret)
 		goto err_fini;
 
-	drm->mode_config.preferred_depth = 16;
+	drm->mode_config.preferred_depth = drm_format_plane_cpp(formats[0], 0) * 8;
 
 	drm_mode_config_reset(drm);
 
@@ -247,7 +269,7 @@ int udrm_drm_register(struct udrm_device *udev,
 		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
 	dev_create->index = drm->primary->index;
-	dev_create->buf_fd = fd;
+	dev_create->buf_fd = udev->buf_fd;
 
 	return 0;
 

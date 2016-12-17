@@ -29,9 +29,13 @@ extern "C" {
 #define UDRM_BUF_MODE_PLAIN_COPY	1
 #define UDRM_BUF_MODE_SWAP_BYTES	2
 
+#define UDRM_BUF_MODE_EMUL_XRGB8888	BIT(8)
+
 struct udrm_dev_create {
 	char name[UDRM_MAX_NAME_SIZE];
 	struct drm_mode_modeinfo mode;
+	__u64 formats;
+	__u32 num_formats;
 	__u32 buf_mode;
 
 	__u32 index;

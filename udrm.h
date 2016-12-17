@@ -40,6 +40,8 @@ struct udrm_device {
 	int			event_ret;
 
 	struct dma_buf *dmabuf;
+	int buf_fd;
+	bool emulate_xrgb8888;
 
 	bool			initialized;
 	bool			fbdev_fb_sent;
@@ -61,7 +63,8 @@ pipe_to_udrm(struct drm_simple_display_pipe *pipe)
 int udrm_send_event(struct udrm_device *udev, void *ev_in);
 
 int udrm_drm_register(struct udrm_device *udev,
-		      struct udrm_dev_create *dev_create);
+		      struct udrm_dev_create *dev_create,
+		      uint32_t *formats, unsigned int num_formats);
 void udrm_drm_unregister(struct udrm_device *udev);
 
 int
