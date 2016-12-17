@@ -39,6 +39,8 @@ struct udrm_device {
 	struct udrm_event	*ev;
 	int			event_ret;
 
+	struct dma_buf *dmabuf;
+
 	bool			initialized;
 	bool			fbdev_fb_sent;
 	struct work_struct	release_work;
@@ -73,5 +75,8 @@ udrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
 int udrm_fbdev_init(struct udrm_device *tdev);
 void udrm_fbdev_fini(struct udrm_device *tdev);
+
+struct dma_buf *udrm_dmabuf_alloc_attrs(struct device *dev, size_t size,
+					unsigned long attrs, int flags);
 
 #endif /* __LINUX_TINYDRM_H */

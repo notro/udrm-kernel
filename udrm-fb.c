@@ -11,6 +11,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fb_helper.h>
+#include <linux/dma-buf.h>
 
 #include <uapi/drm/udrm.h>
 
@@ -80,6 +81,63 @@ static void tinydrm_merge_clips(struct drm_clip_rect *dst,
 	}
 }
 
+u8 dst123;
+
+static void test_read_speed(struct drm_framebuffer *fb)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	volatile u8 *dst = &dst123;
+	u8 *src;
+	u64 start, end;
+	int i;
+
+	if (!cma_obj)
+		return;
+
+	src = cma_obj->vaddr;
+
+	start = local_clock();
+
+	for (i = 0; i < fb->width * fb->height * 2; i++)
+		*dst = src[i];
+
+	end = local_clock();
+
+	printk("%s: %3llums\n", __func__, div_u64(end - start, 1000000));
+}
+
+static void udrm_fb_dirty_buf_copy(struct udrm_device *udev,
+				   struct drm_framebuffer *fb,
+				   struct drm_clip_rect *clip)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	unsigned int x, y;
+	void *buf;
+	u16 *src, *dst;
+//	u64 start, end;
+
+//	start = local_clock();
+
+	buf = dma_buf_vmap(udev->dmabuf);
+	if (!buf)
+		return;
+
+	dst = buf;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		src = cma_obj->vaddr + (y * fb->pitches[0]);
+		src += clip->x1;
+		for (x = clip->x1; x < clip->x2; x++)
+			*dst++ = swab16(*src++);
+	}
+
+	dma_buf_vunmap(udev->dmabuf, buf);
+
+//	end = local_clock();
+//	printk("%s: [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u: %3llums\n", __func__, fb->base.id,
+//		clip->x1, clip->x2, clip->y1, clip->y2, div_u64(end - start, 1000000));
+}
+
 static int udrm_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,
 			     unsigned int flags, unsigned int color,
@@ -93,7 +151,7 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	size_t size_clips, size;
 	int ret;
 
-	DRM_DEBUG_KMS("\n\n\n");
+	DRM_DEBUG("\n\n\n");
 
 	/* don't return -EINVAL, xorg will stop flushing */
 	if (!udev->prepared)
@@ -119,8 +177,6 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
-	clip.x1 = 0;
-	clip.x2 = fb->width;
 	clips = &clip;
 	num_clips = 1;
 
@@ -143,6 +199,12 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	if (num_clips)
 		memcpy(ev->clips, clips, size_clips);
+
+	if (0)
+		test_read_speed(fb);
+
+	if (udev->dmabuf && num_clips == 1)
+		udrm_fb_dirty_buf_copy(udev, fb, clips);
 
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);

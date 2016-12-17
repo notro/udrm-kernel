@@ -25,10 +25,17 @@ extern "C" {
 /* FIXME: Update Documentation/ioctl/ioctl-number.txt */
 #define UDRM_IOCTL_BASE       0xB5
 
+#define UDRM_BUF_MODE_NONE		0
+#define UDRM_BUF_MODE_PLAIN_COPY	1
+#define UDRM_BUF_MODE_SWAP_BYTES	2
+
 struct udrm_dev_create {
 	char name[UDRM_MAX_NAME_SIZE];
 	struct drm_mode_modeinfo mode;
-	int index;
+	__u32 buf_mode;
+
+	__u32 index;
+	__s32 buf_fd;
 };
 
 #define UDRM_DEV_CREATE       _IOWR(UDRM_IOCTL_BASE, 1, struct udrm_dev_create)

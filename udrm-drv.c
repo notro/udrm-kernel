@@ -197,6 +197,7 @@ int udrm_drm_register(struct udrm_device *udev,
 		      struct udrm_dev_create *dev_create)
 {
 	struct drm_device *drm;
+	int fd = -1;
 	int ret;
 
 	ret = drm_mode_convert_umode(&udev->display_mode, &dev_create->mode);
@@ -204,6 +205,18 @@ int udrm_drm_register(struct udrm_device *udev,
 		return ret;
 
 	drm_mode_debug_printmodeline(&udev->display_mode);
+
+	if (dev_create->buf_mode) {
+		udev->dmabuf = udrm_dmabuf_alloc_attrs(NULL, 320 * 240 * 2, DMA_ATTR_WRITE_COMBINE, O_RDWR);
+		if (IS_ERR(udev->dmabuf))
+			return PTR_ERR(udev->dmabuf);
+
+		fd = dma_buf_fd(udev->dmabuf, O_RDWR);
+		if (fd < 0) {
+			dma_buf_put(udev->dmabuf);
+			return fd;
+		}
+	}
 
 	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
@@ -234,6 +247,7 @@ int udrm_drm_register(struct udrm_device *udev,
 		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
 	dev_create->index = drm->primary->index;
+	dev_create->buf_fd = fd;
 
 	return 0;
 
