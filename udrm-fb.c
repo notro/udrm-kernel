@@ -31,6 +31,7 @@ static int udrm_fb_create_event(struct drm_framebuffer *fb)
 
 	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
 
+	/* Needed because the id is gone in &drm_framebuffer_funcs->destroy */
 	ret = idr_alloc(&udev->idr, fb, fb->base.id, fb->base.id + 1, GFP_KERNEL);
 	if (ret < 1) {
 		DRM_ERROR("[FB:%d]: failed to allocate idr %d\n", fb->base.id, ret);
@@ -243,6 +244,10 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	udev->enabled = true;
 
+	/*
+	 * FIXME: is there any apps/libs that pass more than one clip rect?
+	 *        buffer copy will be more complex with multi clips
+	 */
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 	clips = &clip;
@@ -254,7 +259,8 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	if (!ev)
 		return -ENOMEM;
 
-	DRM_DEBUG("[FB:%d]: num_clips=%u, size_clips=%zu, size=%zu\n", fb->base.id, num_clips, size_clips, size);
+	DRM_DEBUG("[FB:%d]: num_clips=%u, size_clips=%zu, size=%zu\n",
+		  fb->base.id, num_clips, size_clips, size);
 
 	ev->base.type = UDRM_EVENT_FB_DIRTY;
 	ev->base.length = size;

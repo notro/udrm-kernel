@@ -161,8 +161,8 @@ int udrm_display_pipe_init(struct udrm_device *udev,
 
 	connector->status = connector_status_connected;
 
-	ret = drm_simple_display_pipe_init(drm, &udev->pipe, &udrm_pipe_funcs, formats,
-					   format_count, connector);
+	ret = drm_simple_display_pipe_init(drm, &udev->pipe, &udrm_pipe_funcs,
+					   formats, format_count, connector);
 	if (ret)
 		drm_connector_cleanup(connector);
 

@@ -1,4 +1,3 @@
-#define DEBUG
 /*
  * Copyright (C) 2016 Noralf Trønnes
  *
@@ -20,11 +19,13 @@
 
 static void udrm_lastclose(struct drm_device *drm)
 {
-	struct udrm_device *tdev = drm_to_udrm(drm);
+	struct udrm_device *udev = drm_to_udrm(drm);
 
-	DRM_DEBUG_KMS("\n");
-	if (tdev->fbdev_used)
-		drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+	DRM_DEBUG_KMS("initialized=%u, fbdev_used=%u\n", udev->initialized,
+		      udev->fbdev_used);
+
+	if (udev->fbdev_used)
+		drm_fbdev_cma_restore_mode(udev->fbdev_cma);
 	else
 		drm_crtc_force_disable_all(drm);
 }
@@ -252,7 +253,7 @@ int udrm_drm_register(struct udrm_device *udev,
 
 	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
-		return ret;;
+		return ret;
 
 	drm = &udev->drm;
 	drm->mode_config.funcs = &udrm_mode_config_funcs;

@@ -18,8 +18,9 @@ struct udrm_dmabuf_object {
 	size_t size;
 };
 
-static struct sg_table *udrm_dmabuf_map_dma_buf(struct dma_buf_attachment *attach,
-					    enum dma_data_direction dir)
+static struct sg_table *
+udrm_dmabuf_map_dma_buf(struct dma_buf_attachment *attach,
+			enum dma_data_direction dir)
 {
 	struct udrm_dmabuf_object *obj = attach->dmabuf->priv;
 	struct sg_table *sgt;
@@ -62,7 +63,7 @@ static void udrm_dmabuf_release(struct dma_buf *dma_buf)
 {
 	struct udrm_dmabuf_object *obj = dma_buf->priv;
 
-printk("%s()\n", __func__);
+	pr_debug("%s()\n", __func__);
 	dma_free_attrs(obj->dev, obj->size, obj->vaddr, obj->dma_addr,
 		       obj->attrs);
 	kfree(obj);
@@ -72,7 +73,7 @@ static void *udrm_dmabuf_kmap(struct dma_buf *dma_buf, unsigned long page_num)
 {
 	struct udrm_dmabuf_object *obj = dma_buf->priv;
 
-	return obj->vaddr + page_num * PAGE_SIZE;;
+	return obj->vaddr + page_num * PAGE_SIZE;
 }
 
 static void *udrm_dmabuf_vmap(struct dma_buf *dma_buf)

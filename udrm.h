@@ -30,7 +30,7 @@ struct udrm_device {
 
 	struct drm_pending_vblank_event *event;
 
-	struct idr 		idr;
+	struct idr		idr;
 
 	struct mutex		mutex;
 	wait_queue_head_t	waitq;

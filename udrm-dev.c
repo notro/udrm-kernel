@@ -1,4 +1,3 @@
-#define DEBUG
 /*
  * Copyright (C) 2016 Noralf Trønnes
  *
@@ -57,11 +56,10 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	wake_up_interruptible(&udev->waitq);
 
 	time_left = wait_for_completion_timeout(&udev->completion, 5 * HZ);
-	//ret = udev->event_ret;
-	//time_left = 1;
+	ret = udev->event_ret;
 	if (!time_left) {
 		DRM_ERROR("timeout waiting for reply\n");
-		ret =-ETIMEDOUT;
+		ret = -ETIMEDOUT;
 	}
 
 out_unlock:
@@ -256,10 +254,11 @@ static const struct file_operations udrm_fops = {
 	.poll		= udrm_poll,
 
 	.unlocked_ioctl	= udrm_ioctl,
-//#ifdef CONFIG_COMPAT
-//	.compat_ioctl	= udrm_compat_ioctl,
-//#endif
-
+/* FIXME
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= udrm_compat_ioctl,
+#endif
+*/
 	.llseek		= no_llseek,
 };
 
