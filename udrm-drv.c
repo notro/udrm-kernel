@@ -191,17 +191,24 @@ static void udrm_drm_fini(struct udrm_device *udev)
 static int udrm_create_buf(struct udrm_device *udev, u32 mode,
 			   uint32_t *formats, unsigned int num_formats)
 {
-	int i, fd, ret, max_cpp = 0;
+	int i, fd, max_cpp = 0;
 	size_t len;
 
-	if (mode & UDRM_BUF_MODE_EMUL_XRGB8888)
-		udev->emulate_xrgb8888 = true;
+	if (mode & UDRM_BUF_MODE_EMUL_XRGB8888) {
+		if (formats[0] != DRM_FORMAT_RGB565)
+			return -EINVAL;
+		udev->emulate_xrgb8888_format = formats[0];
+	}
 
 	for (i = 0; i < num_formats; i++) {
-		if (udev->emulate_xrgb8888 && formats[i] == DRM_FORMAT_XRGB8888)
+		if (udev->emulate_xrgb8888_format &&
+		    formats[i] == DRM_FORMAT_XRGB8888)
 			continue;
 		max_cpp = max(max_cpp, drm_format_plane_cpp(formats[i], 0));
 	}
+
+	if (!max_cpp)
+		return -EINVAL;
 
 	len = udev->display_mode.hdisplay * udev->display_mode.vdisplay * max_cpp;
 
@@ -216,6 +223,7 @@ static int udrm_create_buf(struct udrm_device *udev, u32 mode,
 		return fd;
 	}
 
+	udev->buf_mode = mode;
 	udev->buf_fd = fd;
 
 	return 0;

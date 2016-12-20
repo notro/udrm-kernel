@@ -39,9 +39,10 @@ struct udrm_device {
 	struct udrm_event	*ev;
 	int			event_ret;
 
+	u32 buf_mode;
+	u32 emulate_xrgb8888_format;
 	struct dma_buf *dmabuf;
 	int buf_fd;
-	bool emulate_xrgb8888;
 
 	bool			initialized;
 	bool			fbdev_fb_sent;

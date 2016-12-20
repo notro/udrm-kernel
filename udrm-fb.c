@@ -106,36 +106,104 @@ static void test_read_speed(struct drm_framebuffer *fb)
 	printk("%s: %3llums\n", __func__, div_u64(end - start, 1000000));
 }
 
-static void udrm_fb_dirty_buf_copy(struct udrm_device *udev,
+static void udrm_buf_memcpy(void *dst, void *vaddr, unsigned int pitch,
+			    unsigned int cpp, struct drm_clip_rect *clip)
+{
+	void *src = vaddr + (clip->y1 * pitch) + (clip->x1 * cpp);
+	size_t len = (clip->x2 - clip->x1) * cpp;
+	unsigned int y;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		memcpy(dst, src, len);
+		src += pitch;
+		dst += len;
+	}
+}
+
+static void udrm_buf_swab16(u16 *dst, void *vaddr, unsigned int pitch,
+			    struct drm_clip_rect *clip)
+{
+	unsigned int x, y;
+	u16 *src;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		src = vaddr + (y * pitch);
+		src += clip->x1;
+		for (x = clip->x1; x < clip->x2; x++)
+			*dst++ = swab16(*src++);
+	}
+}
+
+static void udrm_buf_emul_xrgb888(void *dst, void *vaddr, unsigned int pitch,
+			u32 buf_mode, struct drm_clip_rect *clip)
+{
+	bool swap = (buf_mode & 7) == UDRM_BUF_MODE_SWAP_BYTES;
+	u16 val16, *dst16 = dst;
+	unsigned int x, y;
+	u32 *src;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		src = vaddr + (y * pitch);
+		src += clip->x1;
+		for (x = clip->x1; x < clip->x2; x++) {
+			val16 = ((*src & 0x00F80000) >> 8) |
+				((*src & 0x0000FC00) >> 5) |
+				((*src & 0x000000F8) >> 3);
+			src++;
+			if (swap)
+				*dst16++ = swab16(val16);
+			else
+				*dst16++ = val16;
+		}
+	}
+}
+
+static bool udrm_fb_dirty_buf_copy(struct udrm_device *udev,
 				   struct drm_framebuffer *fb,
 				   struct drm_clip_rect *clip)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	unsigned int x, y;
+	unsigned int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
+	bool ret = true;
 	void *buf;
-	u16 *src, *dst;
 //	u64 start, end;
 
 //	start = local_clock();
 
 	buf = dma_buf_vmap(udev->dmabuf);
 	if (!buf)
-		return;
+		return false;
 
-	dst = buf;
-
-	for (y = clip->y1; y < clip->y2; y++) {
-		src = cma_obj->vaddr + (y * fb->pitches[0]);
-		src += clip->x1;
-		for (x = clip->x1; x < clip->x2; x++)
-			*dst++ = swab16(*src++);
+	if (udev->emulate_xrgb8888_format &&
+	    fb->pixel_format == DRM_FORMAT_XRGB8888) {
+		udrm_buf_emul_xrgb888(buf, cma_obj->vaddr, fb->pitches[0],
+				      udev->buf_mode, clip);
+		goto out;
 	}
 
+	switch (udev->buf_mode & 7) {
+	case UDRM_BUF_MODE_PLAIN_COPY:
+		udrm_buf_memcpy(buf, cma_obj->vaddr, fb->pitches[0], cpp, clip);
+		break;
+	case UDRM_BUF_MODE_SWAP_BYTES:
+		/* FIXME support more */
+		if (cpp == 2)
+			udrm_buf_swab16(buf, cma_obj->vaddr, fb->pitches[0], clip);
+		else
+			ret = false;
+		break;
+	default:
+		ret = false;
+		break;
+	}
+out:
 	dma_buf_vunmap(udev->dmabuf, buf);
 
 //	end = local_clock();
 //	printk("%s: [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u: %3llums\n", __func__, fb->base.id,
 //		clip->x1, clip->x2, clip->y1, clip->y2, div_u64(end - start, 1000000));
+
+	return ret;
 }
 
 static int udrm_fb_dirty(struct drm_framebuffer *fb,
@@ -210,7 +278,6 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
 
 	ret = udrm_send_event(udev, ev);
-
 	if (ret)
 		pr_err_once("Failed to update display %d\n", ret);
 
