@@ -30,18 +30,22 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	unsigned long time_left;
 	int ret = 0;
 
+	mutex_lock(&udev->dev_lock);
+
 	DRM_DEBUG("IN ev->type=%u, ev->length=%u\n", ev->type, ev->length);
 
 	if (!udev->initialized) {
 		DRM_ERROR("Not initialized\n");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto out_unlock;
 	}
 
 	ev = kmemdup(ev, ev->length, GFP_KERNEL);
-	if (!ev)
-		return -ENOMEM;
+	if (!ev) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
 
-	mutex_lock(&udev->dev_lock);
 	reinit_completion(&udev->completion);
 
 	ret = mutex_lock_interruptible(&udev->mutex);
