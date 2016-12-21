@@ -201,8 +201,6 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	size_t size_clips, size;
 	int ret;
 
-	DRM_DEBUG("\n\n\n");
-
 	/* don't return -EINVAL, xorg will stop flushing */
 	if (!udev->prepared)
 		return 0;
@@ -260,7 +258,7 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	ret = udrm_send_event(udev, ev);
 	if (ret)
-		pr_err_once("Failed to update display %d\n", ret);
+		pr_err_ratelimited("Failed to update display %d\n", ret);
 
 	return ret;
 }

@@ -30,6 +30,8 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	unsigned long time_left;
 	int ret = 0;
 
+	DRM_DEBUG("IN ev->type=%u, ev->length=%u\n", ev->type, ev->length);
+
 	if (!udev->initialized) {
 		DRM_ERROR("Not initialized\n");
 		return -ENODEV;
@@ -39,7 +41,6 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	if (!ev)
 		return -ENOMEM;
 
-	DRM_DEBUG("(ev=%p) IN\n", ev);
 	mutex_lock(&udev->dev_lock);
 	reinit_completion(&udev->completion);
 
@@ -50,8 +51,6 @@ int udrm_send_event(struct udrm_device *udev, void *ev_in)
 	}
 	udev->ev = ev;
 	mutex_unlock(&udev->mutex);
-
-	DRM_DEBUG("ev->type=%u, ev->length=%u\n", udev->ev->type, udev->ev->length);
 
 	wake_up_interruptible(&udev->waitq);
 
@@ -148,7 +147,6 @@ static ssize_t udrm_read(struct file *file, char __user *buffer, size_t count,
 	struct udrm_device *udev = file->private_data;
 	ssize_t ret;
 
-	DRM_DEBUG_KMS("(count=%zu)\n", count);
 	if (!count)
 		return 0;
 
@@ -160,7 +158,6 @@ static ssize_t udrm_read(struct file *file, char __user *buffer, size_t count,
 		if (!udev->ev && (file->f_flags & O_NONBLOCK)) {
 			ret = -EAGAIN;
 		} else if (udev->ev) {
-			DRM_DEBUG_KMS("udev->ev->length=%u\n", udev->ev->length);
 			if (count < udev->ev->length)
 				ret = -EINVAL;
 			else if (copy_to_user(buffer, udev->ev, udev->ev->length))
@@ -187,7 +184,6 @@ static unsigned int udrm_poll(struct file *file, poll_table *wait)
 {
 	struct udrm_device *udev = file->private_data;
 
-	DRM_DEBUG_KMS("\n");
 	poll_wait(file, &udev->waitq, wait);
 
 	if (udev->ev)
