@@ -82,31 +82,6 @@ static void tinydrm_merge_clips(struct drm_clip_rect *dst,
 	}
 }
 
-u8 dst123;
-
-static void test_read_speed(struct drm_framebuffer *fb)
-{
-	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	volatile u8 *dst = &dst123;
-	u8 *src;
-	u64 start, end;
-	int i;
-
-	if (!cma_obj)
-		return;
-
-	src = cma_obj->vaddr;
-
-	start = local_clock();
-
-	for (i = 0; i < fb->width * fb->height * 2; i++)
-		*dst = src[i];
-
-	end = local_clock();
-
-	printk("%s: %3llums\n", __func__, div_u64(end - start, 1000000));
-}
-
 static void udrm_buf_memcpy(void *dst, void *vaddr, unsigned int pitch,
 			    unsigned int cpp, struct drm_clip_rect *clip)
 {
@@ -165,46 +140,52 @@ static bool udrm_fb_dirty_buf_copy(struct udrm_device *udev,
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	unsigned int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
-	bool ret = true;
-	void *buf;
-//	u64 start, end;
+	unsigned int pitch = fb->pitches[0];
+	void *dst, *src = cma_obj->vaddr;
+	int ret = 0;
 
-//	start = local_clock();
+	if (cma_obj->base.import_attach) {
+		ret = dma_buf_begin_cpu_access(cma_obj->base.import_attach->dmabuf,
+					       DMA_FROM_DEVICE);
+		if (ret)
+			return false;
+	}
 
-	buf = dma_buf_vmap(udev->dmabuf);
-	if (!buf)
-		return false;
+	dst = dma_buf_vmap(udev->dmabuf);
+	if (!dst) {
+		ret = -ENOMEM;
+		goto out_end_access;
+	}
 
 	if (udev->emulate_xrgb8888_format &&
 	    fb->pixel_format == DRM_FORMAT_XRGB8888) {
-		udrm_buf_emul_xrgb888(buf, cma_obj->vaddr, fb->pitches[0],
-				      udev->buf_mode, clip);
+		udrm_buf_emul_xrgb888(dst, src, pitch, udev->buf_mode, clip);
 		goto out;
 	}
 
 	switch (udev->buf_mode & 7) {
 	case UDRM_BUF_MODE_PLAIN_COPY:
-		udrm_buf_memcpy(buf, cma_obj->vaddr, fb->pitches[0], cpp, clip);
+		udrm_buf_memcpy(dst, src, pitch, cpp, clip);
 		break;
 	case UDRM_BUF_MODE_SWAP_BYTES:
 		/* FIXME support more */
 		if (cpp == 2)
-			udrm_buf_swab16(buf, cma_obj->vaddr, fb->pitches[0], clip);
+			udrm_buf_swab16(dst, src, pitch, clip);
 		else
-			ret = false;
+			ret = -EINVAL;
 		break;
 	default:
-		ret = false;
+		ret = -EINVAL;
 		break;
 	}
 out:
-	dma_buf_vunmap(udev->dmabuf, buf);
+	dma_buf_vunmap(udev->dmabuf, dst);
+out_end_access:
+	if (cma_obj->base.import_attach)
+		ret = dma_buf_end_cpu_access(cma_obj->base.import_attach->dmabuf,
+					     DMA_FROM_DEVICE);
 
-//	end = local_clock();
-//	printk("%s: [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u: %3llums\n", __func__, fb->base.id,
-//		clip->x1, clip->x2, clip->y1, clip->y2, div_u64(end - start, 1000000));
-
-	return ret;
+	return ret ? false : true;
 }
 
 static int udrm_fb_dirty(struct drm_framebuffer *fb,
@@ -245,22 +226,25 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 	udev->enabled = true;
 
 	/*
-	 * FIXME: is there any apps/libs that pass more than one clip rect?
-	 *        buffer copy will be more complex with multi clips
+	 * FIXME: are there any apps/libs that pass more than one clip rect?
+	 *        should we support passing multi clips to the driver?
 	 */
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 	clips = &clip;
 	num_clips = 1;
 
+	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
+		  clips->x1, clips->x2, clips->y1, clips->y2);
+
+	if (udev->dmabuf && num_clips == 1)
+		udrm_fb_dirty_buf_copy(udev, fb, clips);
+
 	size_clips = num_clips * sizeof(struct drm_clip_rect);
 	size = sizeof(struct udrm_event_fb_dirty) + size_clips;
 	ev = kzalloc(size, GFP_KERNEL);
 	if (!ev)
 		return -ENOMEM;
-
-	DRM_DEBUG("[FB:%d]: num_clips=%u, size_clips=%zu, size=%zu\n",
-		  fb->base.id, num_clips, size_clips, size);
 
 	ev->base.type = UDRM_EVENT_FB_DIRTY;
 	ev->base.length = size;
@@ -273,15 +257,6 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 
 	if (num_clips)
 		memcpy(ev->clips, clips, size_clips);
-
-	if (0)
-		test_read_speed(fb);
-
-	if (udev->dmabuf && num_clips == 1)
-		udrm_fb_dirty_buf_copy(udev, fb, clips);
-
-	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
-		  clip.x1, clip.x2, clip.y1, clip.y2);
 
 	ret = udrm_send_event(udev, ev);
 	if (ret)
