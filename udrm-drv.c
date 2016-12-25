@@ -189,10 +189,10 @@ static void udrm_drm_fini(struct udrm_device *udev)
 	drm_dev_unref(drm);
 }
 
-static int udrm_create_buf(struct udrm_device *udev, u32 mode,
+static int udrm_buf_get(struct udrm_device *udev, int fd, u32 mode,
 			   uint32_t *formats, unsigned int num_formats)
 {
-	int i, fd, max_cpp = 0;
+	int i, max_cpp = 0;
 	size_t len;
 
 	if (mode & UDRM_BUF_MODE_EMUL_XRGB8888) {
@@ -213,16 +213,16 @@ static int udrm_create_buf(struct udrm_device *udev, u32 mode,
 
 	len = udev->display_mode.hdisplay * udev->display_mode.vdisplay * max_cpp;
 
-	udev->dmabuf = udrm_dmabuf_alloc_attrs(NULL, len,
-					       DMA_ATTR_WRITE_COMBINE, O_RDWR);
+	udev->dmabuf = dma_buf_get(fd);
 	if (IS_ERR(udev->dmabuf))
 		return PTR_ERR(udev->dmabuf);
 
-	fd = dma_buf_fd(udev->dmabuf, O_RDWR);
-	if (fd < 0) {
+	if (len > udev->dmabuf->size) {
 		dma_buf_put(udev->dmabuf);
-		return fd;
+		return -EINVAL;
 	}
+
+	/* FIXME is dma_buf_attach() necessary when there's no device? */
 
 	udev->buf_mode = mode;
 	udev->buf_fd = fd;
@@ -244,16 +244,15 @@ int udrm_drm_register(struct udrm_device *udev,
 	drm_mode_debug_printmodeline(&udev->display_mode);
 
 	if (dev_create->buf_mode) {
-		ret = udrm_create_buf(udev, dev_create->buf_mode, formats, num_formats);
+		ret = udrm_buf_get(udev, dev_create->buf_fd, dev_create->buf_mode,
+				   formats, num_formats);
 		if (ret)
 			return ret;
-	} else {
-		udev->buf_fd = -1;
 	}
 
 	ret = udrm_drm_init(udev, dev_create->name);
 	if (ret)
-		return ret;
+		goto err_put_dmabuf;
 
 	drm = &udev->drm;
 	drm->mode_config.funcs = &udrm_mode_config_funcs;
@@ -278,10 +277,12 @@ int udrm_drm_register(struct udrm_device *udev,
 		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
 	dev_create->index = drm->primary->index;
-	dev_create->buf_fd = udev->buf_fd;
 
 	return 0;
 
+err_put_dmabuf:
+	if (udev->dmabuf)
+		dma_buf_put(udev->dmabuf);
 err_fini:
 	udrm_drm_fini(udev);
 
@@ -298,6 +299,9 @@ void udrm_drm_unregister(struct udrm_device *udev)
 	cancel_work_sync(&udev->dirty_work);
 	udrm_fbdev_fini(udev);
 	drm_dev_unregister(drm);
+
+	if (udev->dmabuf)
+		dma_buf_put(udev->dmabuf);
 
 	udrm_drm_fini(udev);
 }

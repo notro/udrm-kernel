@@ -119,8 +119,6 @@ static ssize_t udrm_write(struct file *file, const char __user *buffer,
 	struct udrm_device *udev = file->private_data;
 	int ret, event_ret;
 
-	DRM_DEBUG_KMS("\n");
-
 	if (!udev->initialized)
 		return -EINVAL;
 

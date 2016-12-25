@@ -37,9 +37,9 @@ struct udrm_dev_create {
 	__u64 formats;
 	__u32 num_formats;
 	__u32 buf_mode;
+	__s32 buf_fd;
 
 	__u32 index;
-	__s32 buf_fd;
 };
 
 #define UDRM_DEV_CREATE       _IOWR(UDRM_IOCTL_BASE, 1, struct udrm_dev_create)

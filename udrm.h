@@ -80,7 +80,4 @@ udrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 int udrm_fbdev_init(struct udrm_device *tdev);
 void udrm_fbdev_fini(struct udrm_device *tdev);
 
-struct dma_buf *udrm_dmabuf_alloc_attrs(struct device *dev, size_t size,
-					unsigned long attrs, int flags);
-
 #endif /* __LINUX_TINYDRM_H */
