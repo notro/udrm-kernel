@@ -213,9 +213,8 @@ static long udrm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case UDRM_DEV_CREATE:
-
-		if (copy_from_user(&dev_create,
-				   (void __user *)arg, sizeof(dev_create)))
+		if (copy_from_user(&dev_create, (void __user *)arg,
+				   sizeof(dev_create)))
 			return -EFAULT;
 
 		if (!dev_create.formats || !dev_create.num_formats)
@@ -238,7 +237,7 @@ static long udrm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 		if (copy_to_user((void __user *)arg, &dev_create,
 				 sizeof(dev_create)))
-			ret = -EFAULT;
+			return -EFAULT;
 		break;
 	default:
 		ret = -ENOTTY;
@@ -271,9 +270,6 @@ static struct miscdevice udrm_misc = {
 	.name		= "udrm",
 };
 module_misc_device(udrm_misc);
-
-MODULE_ALIAS_MISCDEV(MISC_DYNAMIC_MINOR);
-MODULE_ALIAS("devname: udrm");
 
 MODULE_AUTHOR("Noralf Trønnes");
 MODULE_DESCRIPTION("Userspace driver support for DRM");
