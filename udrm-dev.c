@@ -270,18 +270,10 @@ static struct miscdevice udrm_misc = {
 	.minor		= MISC_DYNAMIC_MINOR,
 	.name		= "udrm",
 };
+module_misc_device(udrm_misc);
 
-static int __init udrm_init(void)
-{
-	return misc_register(&udrm_misc);
-}
-module_init(udrm_init);
-
-static void __exit udrm_exit(void)
-{
-	misc_deregister(&udrm_misc);
-}
-module_exit(udrm_exit);
+MODULE_ALIAS_MISCDEV(MISC_DYNAMIC_MINOR);
+MODULE_ALIAS("devname: udrm");
 
 MODULE_AUTHOR("Noralf Trønnes");
 MODULE_DESCRIPTION("Userspace driver support for DRM");
