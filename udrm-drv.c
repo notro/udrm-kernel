@@ -230,6 +230,18 @@ static int udrm_buf_get(struct udrm_device *udev, int fd, u32 mode,
 	return 0;
 }
 
+static void fbdev_init_work(struct work_struct *work)
+{
+	struct udrm_device *udev = container_of(work, struct udrm_device,
+						fbdev_init_work);
+	int ret;
+
+	ret = udrm_fbdev_init(udev);
+	if (ret)
+		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
+
+}
+
 int udrm_drm_register(struct udrm_device *udev,
 		      struct udrm_dev_create *dev_create,
 		      uint32_t *formats, unsigned int num_formats)
@@ -272,9 +284,13 @@ int udrm_drm_register(struct udrm_device *udev,
 	if (ret)
 		goto err_fini;
 
-	ret = udrm_fbdev_init(udev);
-	if (ret)
-		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
+	/*
+	 * fbdev initialization generates events, so to avoid having to queue
+	 * up events or use a multithreading userspace driver, let a worker do
+	 * it so userspace can be ready for the events.
+	 */
+	INIT_WORK(&udev->fbdev_init_work, fbdev_init_work);
+	schedule_work(&udev->fbdev_init_work);
 
 	dev_create->index = drm->primary->index;
 
@@ -295,6 +311,7 @@ void udrm_drm_unregister(struct udrm_device *udev)
 
 	DRM_DEBUG_KMS("udrm_drm_unregister\n");
 
+	cancel_work_sync(&udev->fbdev_init_work);
 	drm_crtc_force_disable_all(drm);
 	cancel_work_sync(&udev->dirty_work);
 	udrm_fbdev_fini(udev);

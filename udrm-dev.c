@@ -208,8 +208,8 @@ static long udrm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct udrm_device *udev = file->private_data;
 	struct udrm_dev_create dev_create;
-	int ret = -EINVAL;
 	uint32_t *formats;
+	int ret;
 
 	switch (cmd) {
 	case UDRM_DEV_CREATE:
@@ -227,16 +227,21 @@ static long udrm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (IS_ERR(formats))
 			return PTR_ERR(formats);
 
+		udev->initialized = true;
 		ret = udrm_drm_register(udev, &dev_create, formats,
 					dev_create.num_formats);
-		if (!ret) {
-			udev->initialized = true;
-			if (copy_to_user((void __user *)arg,
-					 &dev_create, sizeof(dev_create)))
-				ret = -EFAULT;
+		kfree(formats);
+		if (ret) {
+			udev->initialized = false;
+			return ret;
 		}
 
-		kfree(formats);
+		if (copy_to_user((void __user *)arg, &dev_create,
+				 sizeof(dev_create)))
+			ret = -EFAULT;
+		break;
+	default:
+		ret = -ENOTTY;
 		break;
 	}
 

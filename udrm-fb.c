@@ -17,32 +17,6 @@
 
 #include "udrm.h"
 
-static int udrm_fb_create_event(struct drm_framebuffer *fb)
-{
-	struct udrm_device *udev = drm_to_udrm(fb->dev);
-	struct udrm_event_fb ev = {
-		.base = {
-			.type = UDRM_EVENT_FB_CREATE,
-			.length = sizeof(ev),
-		},
-		.fb_id = fb->base.id,
-	};
-	int ret;
-
-	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
-
-	/* Needed because the id is gone in &drm_framebuffer_funcs->destroy */
-	ret = idr_alloc(&udev->idr, fb, fb->base.id, fb->base.id + 1, GFP_KERNEL);
-	if (ret < 1) {
-		DRM_ERROR("[FB:%d]: failed to allocate idr %d\n", fb->base.id, ret);
-		return ret;
-	}
-
-	ret = udrm_send_event(udev, &ev);
-
-	return ret;
-}
-
 static void tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned int num_clips,
 			 unsigned int flags, u32 max_width, u32 max_height)
@@ -215,12 +189,6 @@ static int udrm_fb_dirty(struct drm_framebuffer *fb,
 		num_clips = 0;
 	}
 
-	/* FIXME: if (fb == tdev->fbdev_helper->fb) */
-	if (udev->fbdev_helper && !udev->fbdev_fb_sent) {
-		udrm_fb_create_event(udev->fbdev_helper->fb);
-		udev->fbdev_fb_sent = true;
-	}
-
 	udev->enabled = true;
 
 	/*
@@ -284,14 +252,14 @@ static void udrm_fb_destroy(struct drm_framebuffer *fb)
 
 	if (!iter) {
 		DRM_ERROR("failed to find idr\n");
-		return;
+		goto out;
 	}
 
 	ev.fb_id = id;
 	idr_remove(&udev->idr, id);
 
 	udrm_send_event(udev, &ev);
-
+out:
 	drm_fb_cma_destroy(fb);
 }
 
@@ -300,6 +268,32 @@ static const struct drm_framebuffer_funcs udrm_fb_funcs = {
 	.create_handle	= drm_fb_cma_create_handle,
 	.dirty		= udrm_fb_dirty,
 };
+
+static int udrm_fb_create_event(struct drm_framebuffer *fb)
+{
+	struct udrm_device *udev = drm_to_udrm(fb->dev);
+	struct udrm_event_fb ev = {
+		.base = {
+			.type = UDRM_EVENT_FB_CREATE,
+			.length = sizeof(ev),
+		},
+		.fb_id = fb->base.id,
+	};
+	int ret;
+
+	DRM_DEBUG_KMS("[FB:%d]\n", fb->base.id);
+
+	/* Needed because the id is gone in &drm_framebuffer_funcs->destroy */
+	ret = idr_alloc(&udev->idr, fb, fb->base.id, fb->base.id + 1, GFP_KERNEL);
+	if (ret < 1) {
+		DRM_ERROR("[FB:%d]: failed to allocate idr %d\n", fb->base.id, ret);
+		return ret;
+	}
+
+	ret = udrm_send_event(udev, &ev);
+
+	return ret;
+}
 
 struct drm_framebuffer *
 udrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
@@ -336,6 +330,8 @@ static int udrm_fbdev_create(struct drm_fb_helper *helper,
 
 	DRM_DEBUG_KMS("fbdev: [FB:%d] pixel_format=%s\n", helper->fb->base.id,
 		      drm_get_format_name(helper->fb->pixel_format));
+
+	udrm_fb_create_event(helper->fb);
 
 	return 0;
 }

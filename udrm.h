@@ -24,8 +24,10 @@ struct udrm_device {
 	struct mutex dev_lock;
 	bool prepared;
 	bool enabled;
+
 	struct drm_fbdev_cma *fbdev_cma;
 	struct drm_fb_helper *fbdev_helper;
+	struct work_struct fbdev_init_work;
 	bool fbdev_used;
 
 	struct drm_pending_vblank_event *event;
@@ -45,7 +47,6 @@ struct udrm_device {
 	int buf_fd;
 
 	bool			initialized;
-	bool			fbdev_fb_sent;
 	struct work_struct	release_work;
 };
 
